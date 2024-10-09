@@ -3,6 +3,7 @@ from PIL import Image
 from PIL.ExifTags import TAGS, GPSTAGS
 import os
 from flask_cors import CORS
+import json  # Add this import for JSON handling
 
 app = Flask(__name__)
 CORS(app)
@@ -12,6 +13,9 @@ CORS(app)
 UPLOAD_FOLDER = 'images'
 if not os.path.exists(UPLOAD_FOLDER):
     os.makedirs(UPLOAD_FOLDER)
+
+# Define the file to store GPS data
+GPS_DATA_FILE = 'gps_data.json'
 
 # Function to extract EXIF data from an image
 def get_exif_data(image):
@@ -43,6 +47,20 @@ def get_decimal_from_dms(dms, ref):
         decimal = -decimal
     return decimal
 
+# Load existing GPS data (if available)
+def load_gps_data():
+    if os.path.exists(GPS_DATA_FILE):
+        with open(GPS_DATA_FILE, 'r') as file:
+            return json.load(file)
+    return []
+
+# Save GPS data to file
+def save_gps_data(data):
+    existing_data = load_gps_data()
+    existing_data.extend(data)
+    with open(GPS_DATA_FILE, 'w') as file:
+        json.dump(existing_data, file)
+
 # Home route
 @app.route('/')
 def home():
@@ -50,12 +68,8 @@ def home():
 
 @app.route('/get_image_gps', methods=['GET'])
 def get_image_gps():
-    # Logic to get GPS data from your images
-    gps_data = [
-        {"image": "image1.jpg", "latitude": 37.7749, "longitude": -122.4194},
-        {"image": "image2.jpg", "latitude": 34.0522, "longitude": -118.2437}
-        # Add more images and coordinates as necessary
-    ]
+    # Load GPS data from the file
+    gps_data = load_gps_data()
     return jsonify(gps_data)
 
 
@@ -67,6 +81,7 @@ def upload_photo():
 
     files = request.files.getlist('file')
     results = []
+    gps_data = []  # Initialize a list to store GPS data
 
     for file in files:
         if file.filename == '':
@@ -84,6 +99,11 @@ def upload_photo():
             if geotagging:
                 lat = get_decimal_from_dms(geotagging['GPSLatitude'], geotagging['GPSLatitudeRef'])
                 lon = get_decimal_from_dms(geotagging['GPSLongitude'], geotagging['GPSLongitudeRef'])
+                gps_data.append({
+                    "image": file.filename,
+                    "latitude": lat,
+                    "longitude": lon
+                })
                 results.append({
                     "filename": file.filename,
                     "latitude": lat,
@@ -100,6 +120,9 @@ def upload_photo():
                 "filename": file.filename,
                 "error": str(e)
             })
+
+    # Save the GPS data to the file
+    save_gps_data(gps_data)
 
     return jsonify(results), 200
 
