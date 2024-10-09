@@ -1,0 +1,58 @@
+# Virtual environment
+venv/
+env/
+.myenv/
+*env/
+
+# Environment Variables
+.env
+
+# Flask and Python specific cache files
+*.pyc
+*.pyo
+*.pyd
+*.pyx
+*.pyx[cod]
+*.pyx[cod]
+*.pyx[cod]
+*.pyx[cod]
+*.pyx[cod]
+
+# Log and database files
+*.log
+*.sqlite3
+*.db
+*.db3
+*.sql
+
+# Files
+/images/
+/data/
+
+# Byte-compiled files
+__pycache__/
+*.py[cod]
+
+# Distribution/packaging
+build/
+dist/
+*.egg-info/
+
+# Logs and database files
+*.log
+*.sqlite3
+
+# IDE config files (optional, specific to your setup)
+.vscode/
+.idea/
+.DS_Store
+.venv/
+
+# Pytest and coverage
+.coverage
+.cache
+.pytest_cache/
+
+# Jupyter
+.ipynb_checkpoints/
+
