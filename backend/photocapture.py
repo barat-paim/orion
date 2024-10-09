@@ -50,37 +50,44 @@ def home():
 def upload_photo():
     if 'file' not in request.files:
         return jsonify({"error": "No file part"}), 400
-    
-    file = request.files['file']
-    if file.filename == '':
-        return jsonify({"error": "No selected file"}), 400
 
-    # Save the file to the images folder
-    file_path = os.path.join(UPLOAD_FOLDER, file.filename)
-    file.save(file_path)
+    files = request.files.getlist('file')
+    results = []
 
-    try:
-        image = Image.open(file_path)
-        exif_data = get_exif_data(image)
-        geotagging = get_geotagging(exif_data)
+    for file in files:
+        if file.filename == '':
+            continue
 
-        if geotagging:
-            lat = get_decimal_from_dms(geotagging['GPSLatitude'], geotagging['GPSLatitudeRef'])
-            lon = get_decimal_from_dms(geotagging['GPSLongitude'], geotagging['GPSLongitudeRef'])
-            return jsonify({
+        # Save the file to the images folder
+        file_path = os.path.join(UPLOAD_FOLDER, file.filename)
+        file.save(file_path)
+
+        try:
+            image = Image.open(file_path)
+            exif_data = get_exif_data(image)
+            geotagging = get_geotagging(exif_data)
+
+            if geotagging:
+                lat = get_decimal_from_dms(geotagging['GPSLatitude'], geotagging['GPSLatitudeRef'])
+                lon = get_decimal_from_dms(geotagging['GPSLongitude'], geotagging['GPSLongitudeRef'])
+                results.append({
+                    "filename": file.filename,
+                    "latitude": lat,
+                    "longitude": lon,
+                    "message": "File uploaded and geotagging data extracted successfully!"
+                })
+            else:
+                results.append({
+                    "filename": file.filename,
+                    "message": "File uploaded, but no geotagging data found."
+                })
+        except Exception as e:
+            results.append({
                 "filename": file.filename,
-                "latitude": lat,
-                "longitude": lon,
-                "message": "File uploaded and geotagging data extracted successfully!"
-            }), 200
-        else:
-            return jsonify({
-                "filename": file.filename,
-                "message": "File uploaded, but no geotagging data found."
-            }), 200
+                "error": str(e)
+            })
 
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    return jsonify(results), 200
 
 if __name__ == '__main__':
     app.run(debug=True)
