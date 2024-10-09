@@ -27,6 +27,8 @@ env/
 
 # Files
 /data/
+/images/
+images/
 
 # Byte-compiled files
 __pycache__/
