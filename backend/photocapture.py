@@ -2,8 +2,11 @@ from flask import Flask, request, jsonify
 from PIL import Image
 from PIL.ExifTags import TAGS, GPSTAGS
 import os
+from flask_cors import CORS
 
 app = Flask(__name__)
+CORS(app)
+
 
 # Define the folder to store uploaded images
 UPLOAD_FOLDER = 'images'
@@ -44,6 +47,17 @@ def get_decimal_from_dms(dms, ref):
 @app.route('/')
 def home():
     return "Welcome to the Photo Capture API!"
+
+@app.route('/get_image_gps', methods=['GET'])
+def get_image_gps():
+    # Logic to get GPS data from your images
+    gps_data = [
+        {"image": "image1.jpg", "latitude": 37.7749, "longitude": -122.4194},
+        {"image": "image2.jpg", "latitude": 34.0522, "longitude": -118.2437}
+        # Add more images and coordinates as necessary
+    ]
+    return jsonify(gps_data)
+
 
 # API to upload a photo and extract location data
 @app.route('/upload', methods=['POST'])
