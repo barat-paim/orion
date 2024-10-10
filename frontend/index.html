@@ -25,15 +25,31 @@
             attribution: '© OpenStreetMap contributors'
         }).addTo(map);
 
-        // Fetch GPS data from Flask backend
-        fetch('http://127.0.0.1:5000/get_image_gps')
+        // Array to hold current markers
+        var markers = [];
+
+        function clearMarkers() {
+            markers.forEach(marker => map.removeLayer(marker));
+            markers = [];
+        }
+
+        // Fetch GPS data from Flask backend with cache-busting
+        fetch(`http://127.0.0.1:5000/get_image_gps?cache_bust=${new Date().getTime()}`)
             .then(response => response.json())
             .then(data => {
+                // Clear existing markers
+                clearMarkers();
+
                 // Loop through the GPS data and add markers to the map
                 data.forEach(photo => {
-                    if (photo.latitude && photo.longitude) {
+                    console.log(`Processing photo: ${photo.filename}, Latitude: ${photo.latitude}, Longitude: ${photo.longitude}`);
+
+                    if (typeof photo.latitude === 'number' && typeof photo.longitude === 'number') {
                         var marker = L.marker([photo.latitude, photo.longitude]).addTo(map);
                         marker.bindPopup(`<b>${photo.filename}</b><br>Lat: ${photo.latitude}, Lon: ${photo.longitude}`).openPopup();
+                        markers.push(marker);
+                    } else {
+                        console.error(`Invalid GPS data for ${photo.filename}: (${photo.latitude}, ${photo.longitude})`);
                     }
                 });
             })
