@@ -26,6 +26,12 @@
             display: block;
             margin: 0 auto;
         }
+        .custom-pin-icon {
+            width: 25px !important;
+            height: 41px !important;
+            margin-left: -12px !important;
+            margin-top: -41px !important;
+        }
     </style>
 </head>
 <body>
@@ -49,6 +55,17 @@
 
         var markers = [];
 
+        // Define the custom icon
+        var redPinIcon = L.icon({
+            iconUrl: 'https://cdn.rawgit.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',
+            shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+            iconSize: [25, 41],
+            iconAnchor: [12, 41],
+            popupAnchor: [1, -34],
+            shadowSize: [41, 41],
+            className: 'custom-pin-icon'
+        });
+
         function clearMarkers() {
             markers.forEach(marker => map.removeLayer(marker));
             markers = [];
@@ -64,7 +81,7 @@
                         console.log(`Processing photo: ${photo.filename}, Latitude: ${photo.latitude}, Longitude: ${photo.longitude}`);
 
                         if (typeof photo.latitude === 'number' && typeof photo.longitude === 'number') {
-                            var marker = L.marker([photo.latitude, photo.longitude]).addTo(map);
+                            var marker = L.marker([photo.latitude, photo.longitude], {icon: redPinIcon}).addTo(map);
                             marker.bindPopup(`<b>${photo.filename}</b><br>Lat: ${photo.latitude}, Lon: ${photo.longitude}`).openPopup();
                             markers.push(marker);
                         } else {
