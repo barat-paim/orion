@@ -128,9 +128,37 @@
             .catch(error => console.error('Error updating location:', error));
         }
 
-        function showNotification(message) {
-            console.log('Showing notification:', message);  // Log the notification being shown
-            document.getElementById('notification-content').innerHTML = message;
+        function showNotification(message, nearbyPhotos) {
+            console.log('Showing notification:', message);
+            const notificationContent = document.getElementById('notification-content');
+            const notification = document.createElement('div');
+            notification.className = 'notification';
+
+            const title = document.createElement('div');
+            title.className = 'notification-title';
+            title.textContent = message;
+
+            const body = document.createElement('div');
+            body.className = 'notification-body';
+
+            if (nearbyPhotos && nearbyPhotos.length > 0) {
+                body.textContent = `Nearby photos: ${nearbyPhotos.map(p => p.file_path.split('/').pop()).join(', ')}`;
+                notification.addEventListener('click', () => {
+                    const firstPhoto = nearbyPhotos[0];
+                    map.setView([firstPhoto.latitude, firstPhoto.longitude], 15);
+
+                    L.popup()
+                        .setLatLng([firstPhoto.latitude, firstPhoto.longitude])
+                        .setContent(`<b>${firstPhoto.file_path.split('/').pop()}</b><br>Lat: ${firstPhoto.latitude}, Lon: ${firstPhoto.longitude}`)
+                        .openOn(map);
+                });
+            } else {
+                body.textContent = 'No nearby photos found.';
+            }
+
+            notification.appendChild(title);
+            notification.appendChild(body);
+            notificationContent.appendChild(notification);
         }
 
         document.getElementById('upload-form').addEventListener('submit', function(e) {
@@ -153,14 +181,11 @@
                 fetchAndDisplayMarkers();
                 if (data.notification) {
                     console.log('Notification:', data.notification);  // Log the notification
-                    showNotification(data.notification);
-                    if (data.nearby_photos && data.nearby_photos.length > 0) {
-                        console.log('Nearby photos:', data.nearby_photos);  // Log nearby photos
-                        showNotification(data.notification + "<br>Nearby photos: " + 
-                            data.nearby_photos.map(p => p.file_path).join(', '));
-                    }
+                    showNotification(data.notification, data.nearby_photos);
                 } else {
-                    console.log('No notification in response');  // Log if no notification
+                    console.log('Nearby photos:', data.nearby_photos);  // Log nearby photos
+                    showNotification(data.message + "<br>Nearby photos: " + 
+                        data.nearby_photos.map(p => p.file_path).join(', '));
                 }
             })
             .catch(error => console.error('Error:', error));

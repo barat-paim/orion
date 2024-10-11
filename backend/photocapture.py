@@ -9,6 +9,7 @@ import abc
 from collections import defaultdict
 from math import radians, sin, cos, sqrt, atan2
 from geopy.geocoders import Nominatim
+import geopy.exc
 
 app = Flask(__name__)
 CORS(app)
@@ -34,8 +35,11 @@ class Photo:
 
     def fetch_location_details(self):
         if not self.location_details:
-            location = self.geolocator.reverse(f"{self.gps.lat}, {self.gps.lon}")
-            self.location_details = location.raw['address'] if location else None
+            try:
+                location = self.geolocator.reverse(f"{self.gps.lat}, {self.gps.lon}", timeout=5)
+                self.location_details = location.raw['address'] if location else None
+            except (geopy.exc.GeocoderTimedOut, geopy.exc.GeocoderUnavailable):
+                self.location_details = "Location details unavailable"
         return self.location_details
 
     def to_dict(self):
@@ -63,16 +67,17 @@ class MapView:
         self.save_data()
 
     def get_location_key(self, gps):
-        return (round(gps.lat, 2), round(gps.lon, 2))
+        return (round(gps.lat, 5), round(gps.lon, 5))
 
     def get_photos_for_location(self, location):
         return self.collections.get(location, [])
 
-    def get_photos_in_radius(self, center, radius_km):
+    def get_photos_in_radius(self, center, radius_km=0.2):
         nearby_photos = []
-        for location, photos in self.collections.items():
-            if self.haversine_distance(center, location) <= radius_km:
-                nearby_photos.extend(photos)
+        for photos in self.collections.values():
+            for photo in photos:
+                if self.haversine_distance(center, (photo.gps.lat, photo.gps.lon)) <= radius_km:
+                    nearby_photos.append(photo)
         return nearby_photos
 
     def save_data(self):
@@ -243,7 +248,7 @@ def upload_photo():
                 map_view.create_collections([photo])
             
             # Check for nearby photos
-            nearby_photos = map_view.get_photos_in_radius((gps_data.lat, gps_data.lon), 1)  # 1 km radius
+            nearby_photos = map_view.get_photos_in_radius((gps_data.lat, gps_data.lon), 0.2)  # 0.2 km radius
             
             response_data = {
                 "message": "File uploaded successfully",
@@ -252,7 +257,14 @@ def upload_photo():
             }
             
             if nearby_photos:
-                response_data["notification"] = f"You have {len(response_data['nearby_photos'])} photos taken nearby!"
+                response_data["notification"] = f"You have {len(response_data['nearby_photos'])} photos taken within 200 meters!"
+            
+            try:
+                location_details = photo.fetch_location_details()
+                if location_details and location_details != "Location details unavailable":
+                    response_data["notification"] += f"<br>You took this photo at: {location_details}"
+            except Exception as e:
+                app.logger.error(f"Error fetching location details: {str(e)}")
             
             return jsonify(response_data), 200
         else:
