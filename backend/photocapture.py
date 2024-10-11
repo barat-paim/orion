@@ -46,14 +46,21 @@ class Photo:
             "location_details": self.location_details
         }
 
+    @classmethod
+    def from_dict(cls, data):
+        return cls(data['file_path'], GPS(data['latitude'], data['longitude']))
+
 class MapView:
     def __init__(self):
         self.collections = defaultdict(list)
+        self.load_data()
 
     def create_collections(self, photos):
         for photo in photos:
             location = self.get_location_key(photo.gps)
-            self.collections[location].append(photo)
+            if not any(p.file_path == photo.file_path for p in self.collections[location]):
+                self.collections[location].append(photo)
+        self.save_data()
 
     def get_location_key(self, gps):
         return (round(gps.lat, 2), round(gps.lon, 2))
@@ -67,6 +74,19 @@ class MapView:
             if self.haversine_distance(center, location) <= radius_km:
                 nearby_photos.extend(photos)
         return nearby_photos
+
+    def save_data(self):
+        data = {str(k): [p.to_dict() for p in v] for k, v in self.collections.items()}
+        with open('map_data.json', 'w') as f:
+            json.dump(data, f)
+
+    def load_data(self):
+        if os.path.exists('map_data.json'):
+            with open('map_data.json', 'r') as f:
+                data = json.load(f)
+            for k, v in data.items():
+                location = tuple(map(float, k.strip('()').split(', ')))
+                self.collections[location] = [Photo.from_dict(p) for p in v]
 
     @staticmethod
     def haversine_distance(coord1, coord2):
@@ -216,8 +236,25 @@ def upload_photo():
         
         if gps_data:
             photo = Photo(file_path, gps_data)
-            map_view.create_collections([photo])
-            return jsonify({"message": "File uploaded successfully", "data": photo.to_dict()}), 200
+            
+            # Check if photo already exists before adding
+            existing_photos = [p for p in map_view.collections.values() for p in p if p.file_path == file_path]
+            if not existing_photos:
+                map_view.create_collections([photo])
+            
+            # Check for nearby photos
+            nearby_photos = map_view.get_photos_in_radius((gps_data.lat, gps_data.lon), 1)  # 1 km radius
+            
+            response_data = {
+                "message": "File uploaded successfully",
+                "data": photo.to_dict(),
+                "nearby_photos": [p.to_dict() for p in nearby_photos if p.file_path != file_path]
+            }
+            
+            if nearby_photos:
+                response_data["notification"] = f"You have {len(response_data['nearby_photos'])} photos taken nearby!"
+            
+            return jsonify(response_data), 200
         else:
             return jsonify({"error": "No GPS data found in the image"}), 400
 

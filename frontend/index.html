@@ -32,6 +32,12 @@
             margin-left: -12px !important;
             margin-top: -41px !important;
         }
+        #notification-area {
+            border: 1px solid #ccc;
+            padding: 10px;
+            margin-top: 20px;
+            min-height: 50px;
+        }
     </style>
 </head>
 <body>
@@ -44,6 +50,11 @@
     </form>
     
     <button id="refresh-button">Refresh Map</button>
+
+    <div id="notification-area">
+        <h3>Notifications</h3>
+        <div id="notification-content"></div>
+    </div>
 
     <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
     <script>
@@ -78,14 +89,14 @@
                     clearMarkers();
 
                     data.forEach(photo => {
-                        console.log(`Processing photo: ${photo.filename}, Latitude: ${photo.latitude}, Longitude: ${photo.longitude}`);
+                        console.log(`Processing photo: ${photo.file_path}, Latitude: ${photo.latitude}, Longitude: ${photo.longitude}`);
 
                         if (typeof photo.latitude === 'number' && typeof photo.longitude === 'number') {
                             var marker = L.marker([photo.latitude, photo.longitude], {icon: redPinIcon}).addTo(map);
-                            marker.bindPopup(`<b>${photo.filename}</b><br>Lat: ${photo.latitude}, Lon: ${photo.longitude}`).openPopup();
+                            marker.bindPopup(`<b>${photo.file_path}</b><br>Lat: ${photo.latitude}, Lon: ${photo.longitude}`).openPopup();
                             markers.push(marker);
                         } else {
-                            console.error(`Invalid GPS data for ${photo.filename}: (${photo.latitude}, ${photo.longitude})`);
+                            console.error(`Invalid GPS data for ${photo.file_path}: (${photo.latitude}, ${photo.longitude})`);
                         }
                     });
 
@@ -97,7 +108,33 @@
                 .catch(error => console.error('Error fetching GPS data:', error));
         }
 
+        function updateLocation(lat, lon) {
+            fetch('http://127.0.0.1:5000/update_location', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({latitude: lat, longitude: lon}),
+            })
+            .then(response => response.json())
+            .then(data => {
+                console.log('Location update response:', data);
+                if (data.nearby_photos) {
+                    showNotification(`${data.message}<br>Nearby photos: ${data.nearby_photos.map(p => p.file_path).join(', ')}`);
+                } else {
+                    showNotification(data.message);
+                }
+            })
+            .catch(error => console.error('Error updating location:', error));
+        }
+
+        function showNotification(message) {
+            console.log('Showing notification:', message);  // Log the notification being shown
+            document.getElementById('notification-content').innerHTML = message;
+        }
+
         document.getElementById('upload-form').addEventListener('submit', function(e) {
+            console.log('Form submitted');  // Add this line
             e.preventDefault();
             var formData = new FormData();
             var fileInput = document.getElementById('file-input');
@@ -112,8 +149,19 @@
             })
             .then(response => response.json())
             .then(data => {
-                console.log('Upload successful:', data);
+                console.log('Upload response:', data);  // Log the entire response
                 fetchAndDisplayMarkers();
+                if (data.notification) {
+                    console.log('Notification:', data.notification);  // Log the notification
+                    showNotification(data.notification);
+                    if (data.nearby_photos && data.nearby_photos.length > 0) {
+                        console.log('Nearby photos:', data.nearby_photos);  // Log nearby photos
+                        showNotification(data.notification + "<br>Nearby photos: " + 
+                            data.nearby_photos.map(p => p.file_path).join(', '));
+                    }
+                } else {
+                    console.log('No notification in response');  // Log if no notification
+                }
             })
             .catch(error => console.error('Error:', error));
         });
@@ -122,6 +170,11 @@
 
         // Initial fetch of markers
         fetchAndDisplayMarkers();
+
+        // Add click event to map for simulating location updates
+        map.on('click', function(e) {
+            updateLocation(e.latlng.lat, e.latlng.lng);
+        });
     </script>
 </body>
 </html>
