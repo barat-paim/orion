@@ -5,6 +5,11 @@
         "longitude": -72.1984
     },
     {
+        "filename": "IMG_5560.MOV",
+        "latitude": 44.864,
+        "longitude": -71.3034
+    },
+    {
         "filename": "IMG_5600.MOV",
         "latitude": 42.8589,
         "longitude": -73.2006
@@ -23,5 +28,35 @@
         "filename": "IMG_5623.MOV",
         "latitude": 42.839,
         "longitude": -73.5254
+    },
+    {
+        "filename": "IMG_5624.MOV",
+        "latitude": 42.839,
+        "longitude": -73.5254
+    },
+    {
+        "filename": "IMG_5553.MOV",
+        "latitude": 44.4102,
+        "longitude": -72.1984
+    },
+    {
+        "filename": "IMG_5619.jpeg",
+        "latitude": 42.838997222222226,
+        "longitude": -73.525375
+    },
+    {
+        "filename": "IMG_5654.jpeg",
+        "latitude": 40.73737777777778,
+        "longitude": -73.99481944444445
+    },
+    {
+        "filename": "IMG_5556 2.jpeg",
+        "latitude": 44.40976388888889,
+        "longitude": -72.19699166666668
+    },
+    {
+        "filename": "IMG_5570 2.jpeg",
+        "latitude": 44.86406388888889,
+        "longitude": -71.30333055555555
     }
 ]
