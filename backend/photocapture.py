@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, make_response
+from flask import Flask, request, jsonify
 from PIL import Image
 from PIL.ExifTags import TAGS, GPSTAGS
 import os
@@ -6,6 +6,9 @@ from flask_cors import CORS
 import json
 import subprocess
 import abc
+from collections import defaultdict
+from math import radians, sin, cos, sqrt, atan2
+from geopy.geocoders import Nominatim
 
 app = Flask(__name__)
 CORS(app)
@@ -16,6 +19,89 @@ GPS_DATA_FILE = 'gps_data.json'
 
 # Ensure the upload folder exists
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+class GPS:
+    def __init__(self, lat, lon):
+        self.lat = lat
+        self.lon = lon
+
+class Photo:
+    def __init__(self, file_path, gps):
+        self.file_path = file_path
+        self.gps = gps
+        self.location_details = None
+        self.geolocator = Nominatim(user_agent="memory_map_app")
+
+    def fetch_location_details(self):
+        if not self.location_details:
+            location = self.geolocator.reverse(f"{self.gps.lat}, {self.gps.lon}")
+            self.location_details = location.raw['address'] if location else None
+        return self.location_details
+
+    def to_dict(self):
+        return {
+            "file_path": self.file_path,
+            "latitude": self.gps.lat,
+            "longitude": self.gps.lon,
+            "location_details": self.location_details
+        }
+
+class MapView:
+    def __init__(self):
+        self.collections = defaultdict(list)
+
+    def create_collections(self, photos):
+        for photo in photos:
+            location = self.get_location_key(photo.gps)
+            self.collections[location].append(photo)
+
+    def get_location_key(self, gps):
+        return (round(gps.lat, 2), round(gps.lon, 2))
+
+    def get_photos_for_location(self, location):
+        return self.collections.get(location, [])
+
+    def get_photos_in_radius(self, center, radius_km):
+        nearby_photos = []
+        for location, photos in self.collections.items():
+            if self.haversine_distance(center, location) <= radius_km:
+                nearby_photos.extend(photos)
+        return nearby_photos
+
+    @staticmethod
+    def haversine_distance(coord1, coord2):
+        R = 6371  # Earth radius in kilometers
+
+        lat1, lon1 = map(radians, coord1)
+        lat2, lon2 = map(radians, coord2)
+
+        dlat = lat2 - lat1
+        dlon = lon2 - lon1
+
+        a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
+        c = 2 * atan2(sqrt(a), sqrt(1-a))
+
+        return R * c
+
+class LocationTracker:
+    def __init__(self, user, map_view):
+        self.user = user
+        self.map_view = map_view
+        self.last_location = None
+
+    def update_location(self, new_location):
+        if self.location_changed(new_location):
+            self.last_location = new_location
+            return self.check_nearby_photos()
+
+    def location_changed(self, new_location):
+        if not self.last_location:
+            return True
+        return MapView.haversine_distance(self.last_location, new_location) > 0.1  # 100 meters
+
+    def check_nearby_photos(self):
+        nearby_photos = self.map_view.get_photos_in_radius(self.last_location, 1)  # 1 km radius
+        return nearby_photos if nearby_photos else None
 
 def get_exif_data(image):
     """Extract EXIF data from an image."""
@@ -46,23 +132,6 @@ def get_decimal_from_dms(dms, ref):
     if ref in ['S', 'W']:
         decimal = -decimal
     return decimal
-
-def load_gps_data():
-    """Load existing GPS data from file."""
-    # Example: Load data from a file or database
-    gps_data = ...  # Load your data here
-    print("Loaded GPS data:", gps_data)  # Add this line
-    if os.path.exists(GPS_DATA_FILE):
-        with open(GPS_DATA_FILE, 'r') as file:
-            return json.load(file)
-    return []
-
-def save_gps_data(data):
-    """Save GPS data to file."""
-    existing_data = load_gps_data()
-    existing_data.extend(data)
-    with open(GPS_DATA_FILE, 'w') as file:
-        json.dump(existing_data, file)
 
 class GPSExtractor:
     def extract(self, file_path):
@@ -96,10 +165,10 @@ class JPEGExtractor(BaseExtractor):
             if geotagging:
                 lat = get_decimal_from_dms(geotagging['GPSLatitude'], geotagging['GPSLatitudeRef'])
                 lon = get_decimal_from_dms(geotagging['GPSLongitude'], geotagging['GPSLongitudeRef'])
-                return lat, lon
+                return GPS(lat, lon)
         except Exception as e:
             print(f"Error extracting GPS from image {file_path}: {e}")
-        return None, None
+        return None
 
 class MOVExtractor(BaseExtractor):
     def extract_gps(self, file_path):
@@ -114,83 +183,64 @@ class MOVExtractor(BaseExtractor):
 
             if location_tag:
                 lat, lon = location_tag[:8], location_tag[8:17]
-                return float(lat), float(lon)
+                return GPS(float(lat), float(lon))
         except Exception as e:
             print(f"Error extracting GPS data from MOV: {e}")
-        return None, None
+        return None
 
 class NullExtractor(BaseExtractor):
     def extract_gps(self, file_path):
-        return None, None
+        return None
 
-def update_gps_data():
-    gps_data = []
-    extractor = GPSExtractor()
-    for filename in os.listdir(UPLOAD_FOLDER):
-        file_path = os.path.join(UPLOAD_FOLDER, filename)
-        lat, lon = extractor.extract(file_path)
-        if lat is not None and lon is not None:
-            gps_data.append({
-                "filename": filename,
-                "latitude": lat,
-                "longitude": lon
-            })
-
-    with open(GPS_DATA_FILE, 'w') as file:
-        json.dump(gps_data, file, indent=4)
-    print("Updated GPS data:", gps_data)
+map_view = MapView()
+gps_extractor = GPSExtractor()
+location_tracker = LocationTracker("user1", map_view)
 
 @app.route('/')
 def home():
     return "Welcome to the Photo Capture API!"
-
-@app.route('/get_image_gps', methods=['GET'])
-def get_image_gps():
-    update_gps_data()
-    with open(GPS_DATA_FILE, 'r') as file:
-        gps_data = json.load(file)
-    response = make_response(jsonify(gps_data))
-    response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
-    return response
 
 @app.route('/upload', methods=['POST'])
 def upload_photo():
     if 'file' not in request.files:
         return jsonify({"error": "No file part"}), 400
 
-    files = request.files.getlist('file')
-    results = []
-    gps_data = []
-    extractor = GPSExtractor()
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({"error": "No selected file"}), 400
 
-    for file in files:
-        if file.filename == '':
-            continue
-
+    if file:
         file_path = os.path.join(UPLOAD_FOLDER, file.filename)
         file.save(file_path)
-
-        lat, lon = extractor.extract(file_path)
-        if lat is not None and lon is not None:
-            gps_data.append({
-                "image": file.filename,
-                "latitude": lat,
-                "longitude": lon
-            })
-            results.append({
-                "filename": file.filename,
-                "latitude": lat,
-                "longitude": lon,
-                "message": "File uploaded and geotagging data extracted successfully!"
-            })
+        gps_data = gps_extractor.extract(file_path)
+        
+        if gps_data:
+            photo = Photo(file_path, gps_data)
+            map_view.create_collections([photo])
+            return jsonify({"message": "File uploaded successfully", "data": photo.to_dict()}), 200
         else:
-            results.append({
-                "filename": file.filename,
-                "message": "File uploaded, but no geotagging data found."
-            })
+            return jsonify({"error": "No GPS data found in the image"}), 400
 
-    save_gps_data(gps_data)
-    return jsonify(results), 200
+@app.route('/get_image_gps', methods=['GET'])
+def get_image_gps():
+    all_photos = []
+    for photos in map_view.collections.values():
+        all_photos.extend([photo.to_dict() for photo in photos])
+    return jsonify(all_photos)
+
+@app.route('/update_location', methods=['POST'])
+def update_location():
+    data = request.json
+    new_location = (data['latitude'], data['longitude'])
+    nearby_photos = location_tracker.update_location(new_location)
+    
+    if nearby_photos:
+        return jsonify({
+            "message": f"You have {len(nearby_photos)} photos taken nearby!",
+            "nearby_photos": [photo.to_dict() for photo in nearby_photos]
+        }), 200
+    else:
+        return jsonify({"message": "No nearby photos found"}), 200
 
 if __name__ == '__main__':
     app.run(debug=True)
