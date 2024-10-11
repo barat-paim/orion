@@ -5,6 +5,7 @@ import os
 from flask_cors import CORS
 import json
 import subprocess
+import abc
 
 app = Flask(__name__)
 CORS(app)
@@ -63,28 +64,81 @@ def save_gps_data(data):
     with open(GPS_DATA_FILE, 'w') as file:
         json.dump(existing_data, file)
 
-def get_gps_from_mov(filepath):
-    try:
-        # Run ffprobe to extract the location data
-        result = subprocess.run([
-            'ffprobe', '-v', 'quiet', '-print_format', 'json', '-show_entries', 'format_tags',
-            filepath
-        ], capture_output=True, text=True)
-        
-        # Parse the JSON output
-        metadata = json.loads(result.stdout)
-        location_tag = metadata['format']['tags'].get('com.apple.quicktime.location.ISO6709')
+class GPSExtractor:
+    def extract(self, file_path):
+        file_type = self.get_file_type(file_path)
+        extractor = self.get_extractor(file_type)
+        return extractor.extract_gps(file_path)
 
-        if location_tag:
-            # Extract latitude and longitude from ISO6709 format
-            lat, lon = location_tag[:8], location_tag[8:17]  # Adjust slicing based on format
-            lat, lon = float(lat), float(lon)
-            return lat, lon
-        else:
-            return None, None
-    except Exception as e:
-        print(f"Error extracting GPS data from MOV: {e}")
+    def get_file_type(self, file_path):
+        _, extension = os.path.splitext(file_path.lower())
+        return extension[1:]  # Remove the leading dot
+
+    def get_extractor(self, file_type):
+        extractors = {
+            'jpg': JPEGExtractor(),
+            'jpeg': JPEGExtractor(),
+            'mov': MOVExtractor(),
+        }
+        return extractors.get(file_type, NullExtractor())
+
+class BaseExtractor(abc.ABC):
+    @abc.abstractmethod
+    def extract_gps(self, file_path):
+        pass
+
+class JPEGExtractor(BaseExtractor):
+    def extract_gps(self, file_path):
+        try:
+            image = Image.open(file_path)
+            exif_data = get_exif_data(image)
+            geotagging = get_geotagging(exif_data)
+            if geotagging:
+                lat = get_decimal_from_dms(geotagging['GPSLatitude'], geotagging['GPSLatitudeRef'])
+                lon = get_decimal_from_dms(geotagging['GPSLongitude'], geotagging['GPSLongitudeRef'])
+                return lat, lon
+        except Exception as e:
+            print(f"Error extracting GPS from image {file_path}: {e}")
         return None, None
+
+class MOVExtractor(BaseExtractor):
+    def extract_gps(self, file_path):
+        try:
+            result = subprocess.run([
+                'ffprobe', '-v', 'quiet', '-print_format', 'json', '-show_entries', 'format_tags',
+                file_path
+            ], capture_output=True, text=True)
+            
+            metadata = json.loads(result.stdout)
+            location_tag = metadata['format']['tags'].get('com.apple.quicktime.location.ISO6709')
+
+            if location_tag:
+                lat, lon = location_tag[:8], location_tag[8:17]
+                return float(lat), float(lon)
+        except Exception as e:
+            print(f"Error extracting GPS data from MOV: {e}")
+        return None, None
+
+class NullExtractor(BaseExtractor):
+    def extract_gps(self, file_path):
+        return None, None
+
+def update_gps_data():
+    gps_data = []
+    extractor = GPSExtractor()
+    for filename in os.listdir(UPLOAD_FOLDER):
+        file_path = os.path.join(UPLOAD_FOLDER, filename)
+        lat, lon = extractor.extract(file_path)
+        if lat is not None and lon is not None:
+            gps_data.append({
+                "filename": filename,
+                "latitude": lat,
+                "longitude": lon
+            })
+
+    with open(GPS_DATA_FILE, 'w') as file:
+        json.dump(gps_data, file, indent=4)
+    print("Updated GPS data:", gps_data)
 
 @app.route('/')
 def home():
@@ -107,106 +161,36 @@ def upload_photo():
     files = request.files.getlist('file')
     results = []
     gps_data = []
+    extractor = GPSExtractor()
 
     for file in files:
         if file.filename == '':
             continue
 
-        # Save the file to the images folder
         file_path = os.path.join(UPLOAD_FOLDER, file.filename)
         file.save(file_path)
 
-        # Check if the file is a MOV
-        if file.filename.lower().endswith('.mov'):
-            lat, lon = get_gps_from_mov(file_path)
-            if lat and lon:
-                gps_data.append({
-                    "image": file.filename,
-                    "latitude": lat,
-                    "longitude": lon
-                })
-                results.append({
-                    "filename": file.filename,
-                    "latitude": lat,
-                    "longitude": lon,
-                    "message": "File uploaded and geotagging data extracted successfully!"
-                })
-            else:
-                results.append({
-                    "filename": file.filename,
-                    "message": "File uploaded, but no geotagging data found in video."
-                })
-        else:
-            # Existing JPEG/EXIF processing logic
-            try:
-                image = Image.open(file_path)
-                exif_data = get_exif_data(image)
-                geotagging = get_geotagging(exif_data)
-
-                if geotagging:
-                    lat = get_decimal_from_dms(geotagging['GPSLatitude'], geotagging['GPSLatitudeRef'])
-                    lon = get_decimal_from_dms(geotagging['GPSLongitude'], geotagging['GPSLongitudeRef'])
-                    gps_data.append({
-                        "image": file.filename,
-                        "latitude": lat,
-                        "longitude": lon
-                    })
-                    results.append({
-                        "filename": file.filename,
-                        "latitude": lat,
-                        "longitude": lon,
-                        "message": "File uploaded and geotagging data extracted successfully!"
-                    })
-                else:
-                    results.append({
-                        "filename": file.filename,
-                        "message": "File uploaded, but no geotagging data found."
-                    })
-            except Exception as e:
-                results.append({
-                    "filename": file.filename,
-                    "error": str(e)
-                })
-
-    # Save the GPS data to the file
-    save_gps_data(gps_data)
-
-    return jsonify(results), 200
-
-def update_gps_data():
-    gps_data = []
-    for filename in os.listdir(UPLOAD_FOLDER):
-        file_path = os.path.join(UPLOAD_FOLDER, filename)
-        if filename.lower().endswith(('.jpeg', '.jpg')):
-            lat, lon = extract_gps_data_from_image(file_path)
-        elif filename.lower().endswith('.mov'):
-            lat, lon = get_gps_from_mov(file_path)
-        else:
-            continue
-
+        lat, lon = extractor.extract(file_path)
         if lat is not None and lon is not None:
             gps_data.append({
-                "filename": filename,
+                "image": file.filename,
                 "latitude": lat,
                 "longitude": lon
             })
+            results.append({
+                "filename": file.filename,
+                "latitude": lat,
+                "longitude": lon,
+                "message": "File uploaded and geotagging data extracted successfully!"
+            })
+        else:
+            results.append({
+                "filename": file.filename,
+                "message": "File uploaded, but no geotagging data found."
+            })
 
-    with open(GPS_DATA_FILE, 'w') as file:
-        json.dump(gps_data, file, indent=4)
-    print("Updated GPS data:", gps_data)
-
-def extract_gps_data_from_image(file_path):
-    try:
-        image = Image.open(file_path)
-        exif_data = get_exif_data(image)
-        geotagging = get_geotagging(exif_data)
-        if geotagging:
-            lat = get_decimal_from_dms(geotagging['GPSLatitude'], geotagging['GPSLatitudeRef'])
-            lon = get_decimal_from_dms(geotagging['GPSLongitude'], geotagging['GPSLongitudeRef'])
-            return lat, lon
-    except Exception as e:
-        print(f"Error extracting GPS from image {file_path}: {e}")
-    return None, None
+    save_gps_data(gps_data)
+    return jsonify(results), 200
 
 if __name__ == '__main__':
     app.run(debug=True)
