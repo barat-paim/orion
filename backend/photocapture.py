@@ -8,9 +8,12 @@ from geopy.geocoders import Nominatim
 import geopy.exc
 from extract_gps import extract_gps, GPSData
 from clustering import PhotoClusterer
+import pandas as pd
+from sklearn.preprocessing import StandardScaler
+from sklearn.cluster import DBSCAN
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, resources={r"/*": {"origins": "*"}})
 
 # Define constants
 UPLOAD_FOLDER = 'images'
@@ -130,13 +133,16 @@ class LocationTracker:
 map_view = MapView()
 location_tracker = LocationTracker("user1", map_view)
 
+# Initialize an empty list to store all photos
+all_photos = []
+
 # App Routes
 @app.route('/')
 def home():
     return "Welcome to the Photo Capture API!"
 
 @app.route('/upload', methods=['POST'])
-def upload_photo():
+def upload_file():
     if 'file' not in request.files:
         return jsonify({"error": "No file part"}), 400
 
@@ -176,6 +182,13 @@ def upload_photo():
             except Exception as e:
                 app.logger.error(f"Error fetching location details: {str(e)}")
             
+            # After successfully processing the uploaded file, add it to all_photos
+            all_photos.append({
+                'file_path': file_path,
+                'latitude': gps_data.latitude,
+                'longitude': gps_data.longitude
+            })
+            
             return jsonify(response_data), 200
         else:
             return jsonify({"error": "No GPS data found in the image"}), 400
@@ -203,14 +216,31 @@ def update_location():
 
 @app.route('/get_clustered_photos', methods=['GET'])
 def get_clustered_photos():
-    app.logger.info('Fetching clustered photos')
-    zoom_level = int(request.args.get('zoom', 10))
-    all_photos = []
-    for photos in map_view.collections.values():
-        all_photos.extend([photo.to_dict() for photo in photos])
+    global all_photos  # Declare that we're using the global variable
     
-    clustered_photos = photo_clusterer.cluster_photos(all_photos, zoom_level)
-    app.logger.info(f'Clustered photos: {clustered_photos}')
+    zoom_level = int(request.args.get('zoom', 10))
+    
+    # Get map bounds, use None if not provided
+    ne_lat = request.args.get('ne_lat')
+    ne_lng = request.args.get('ne_lng')
+    sw_lat = request.args.get('sw_lat')
+    sw_lng = request.args.get('sw_lng')
+
+    # Convert to float if provided, otherwise use None
+    ne_lat = float(ne_lat) if ne_lat is not None else None
+    ne_lng = float(ne_lng) if ne_lng is not None else None
+    sw_lat = float(sw_lat) if sw_lat is not None else None
+    sw_lng = float(sw_lng) if sw_lng is not None else None
+
+    # Filter photos within the current map bounds if bounds are provided
+    if all([ne_lat, ne_lng, sw_lat, sw_lng]):
+        visible_photos = [photo for photo in all_photos if 
+                          sw_lat <= photo['latitude'] <= ne_lat and 
+                          sw_lng <= photo['longitude'] <= ne_lng]
+    else:
+        visible_photos = all_photos  # Use all photos if bounds are not provided
+
+    clustered_photos = photo_clusterer.cluster_photos(visible_photos, zoom_level)
     return jsonify(clustered_photos)
 
 if __name__ == '__main__':

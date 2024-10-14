@@ -216,7 +216,18 @@
 
         function fetchClusteredPhotos() {
             const zoom = map.getZoom();
-            fetch(`http://127.0.0.1:5000/get_clustered_photos?zoom=${zoom}`)
+            const bounds = map.getBounds();
+            const ne = bounds.getNorthEast();
+            const sw = bounds.getSouthWest();
+
+            const url = new URL('http://127.0.0.1:5000/get_clustered_photos');
+            url.searchParams.append('zoom', zoom);
+            url.searchParams.append('ne_lat', ne.lat);
+            url.searchParams.append('ne_lng', ne.lng);
+            url.searchParams.append('sw_lat', sw.lat);
+            url.searchParams.append('sw_lng', sw.lng);
+
+            fetch(url)
                 .then(response => response.json())
                 .then(data => {
                     // Clear existing markers
@@ -242,6 +253,9 @@
                 })
                 .catch(error => console.error('Error fetching clustered photos:', error));
         }
+
+        // Call fetchClusteredPhotos on both zoom and move events
+        map.on('zoomend moveend', fetchClusteredPhotos);
     </script>
 </body>
 </html>
