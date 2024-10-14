@@ -203,12 +203,14 @@ def update_location():
 
 @app.route('/get_clustered_photos', methods=['GET'])
 def get_clustered_photos():
+    app.logger.info('Fetching clustered photos')
     zoom_level = int(request.args.get('zoom', 10))
     all_photos = []
     for photos in map_view.collections.values():
         all_photos.extend([photo.to_dict() for photo in photos])
     
     clustered_photos = photo_clusterer.cluster_photos(all_photos, zoom_level)
+    app.logger.info(f'Clustered photos: {clustered_photos}')
     return jsonify(clustered_photos)
 
 if __name__ == '__main__':
