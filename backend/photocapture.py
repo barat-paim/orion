@@ -7,6 +7,7 @@ from math import radians, sin, cos, sqrt, atan2
 from geopy.geocoders import Nominatim
 import geopy.exc
 from extract_gps import extract_gps, GPSData
+from clustering import PhotoClusterer
 
 app = Flask(__name__)
 CORS(app)
@@ -14,6 +15,7 @@ CORS(app)
 # Define constants
 UPLOAD_FOLDER = 'images'
 GPS_DATA_FILE = 'map_data.json'
+photo_clusterer = PhotoClusterer()
 
 # Ensure the upload folder exists
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -198,6 +200,16 @@ def update_location():
         }), 200
     else:
         return jsonify({"message": "No nearby photos found"}), 200
+
+@app.route('/get_clustered_photos', methods=['GET'])
+def get_clustered_photos():
+    zoom_level = int(request.args.get('zoom', 10))
+    all_photos = []
+    for photos in map_view.collections.values():
+        all_photos.extend([photo.to_dict() for photo in photos])
+    
+    clustered_photos = photo_clusterer.cluster_photos(all_photos, zoom_level)
+    return jsonify(clustered_photos)
 
 if __name__ == '__main__':
     app.run(debug=True)
