@@ -1,11 +1,19 @@
+import sys
 import os
 from abc import ABC, abstractmethod
 from PIL import Image
 from PIL.ExifTags import TAGS, GPSTAGS
 import piexif
 from fractions import Fraction
-import json
 import ffmpeg
+import logging
+
+# Add this near the top of your script
+script_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.dirname(script_dir)
+
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 
 class GPSData:
     def __init__(self, latitude, longitude):
@@ -72,27 +80,29 @@ class HEICExtractor(GPSExtractor):
 class MOVExtractor(GPSExtractor):
     def extract(self, file_path):
         try:
+            logger.debug(f"Attempting to extract GPS data from MOV file: {file_path}")
             probe = ffmpeg.probe(file_path)
-            metadata = next(s for s in probe['streams'] if s['codec_type'] == 'video')
+            logger.debug(f"FFprobe result: {probe}")
             
-            if 'tags' in metadata and 'location' in metadata['tags']:
-                location = metadata['tags']['location']
-                lat, lon = map(float, location.split('+')[1:3])
-                return GPSData(lat, lon)
-            
-            # If location tag is not present, try to find GPS data in format-specific metadata
-            if 'tags' in metadata:
-                tags = metadata['tags']
+            if 'format' in probe and 'tags' in probe['format']:
+                tags = probe['format']['tags']
+                logger.debug(f"Format tags: {tags}")
+                
                 if 'com.apple.quicktime.location.ISO6709' in tags:
                     location = tags['com.apple.quicktime.location.ISO6709']
-                    lat, lon = map(float, location.split('+')[1:3])
+                    logger.debug(f"Found Apple QuickTime location tag: {location}")
+                    # Parse the ISO6709 format: +40.7685-073.9868+033.150/
+                    parts = location.split('+')
+                    lat = float(parts[1].split('-')[0])
+                    lon = -float(parts[1].split('-')[1].split('+')[0])  # Longitude is negative
                     return GPSData(lat, lon)
-                
-                # Add more vendor-specific metadata checks here if needed
-        
+            
+            logger.warning("No recognized GPS tags found in metadata")
+            return None
+            
         except Exception as e:
-            print(f"Error extracting GPS data from MOV: {e}")
-        return None
+            logger.error(f"Error extracting GPS data from MOV: {e}")
+            return None
 
 class GPSExtractorFactory:
     @staticmethod
@@ -114,3 +124,22 @@ def extract_gps(file_path):
     except ValueError as e:
         print(f"Error: {e}")
         return None
+
+# Example usage
+if __name__ == "__main__":
+    # Use a default relative path if no argument is provided
+    default_path = os.path.join(script_dir, 'images', 'apples.jpeg')
+    file_path = sys.argv[1] if len(sys.argv) > 1 else default_path
+
+    # Get the absolute path
+    abs_file_path = os.path.abspath(file_path)
+
+    if not os.path.exists(abs_file_path):
+        print(f"Error: File '{abs_file_path}' does not exist.")
+        sys.exit(1)
+    
+    gps_data = extract_gps(abs_file_path)
+    if gps_data:
+        print(f"Extracted GPS Data: Latitude {gps_data.latitude}, Longitude {gps_data.longitude}")
+    else:
+        print("No GPS data found or extraction failed.")
