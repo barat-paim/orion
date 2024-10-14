@@ -38,6 +38,15 @@
             margin-top: 20px;
             min-height: 50px;
         }
+        .cluster-marker {
+            background-color: #3388ff;
+            border-radius: 50%;
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+        }
     </style>
 </head>
 <body>
@@ -58,7 +67,11 @@
 
     <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
     <script>
-        var map = L.map('map').setView([51.505, -0.09], 13);
+        var map = L.map('map', {
+            center: [51.505, -0.09],
+            zoom: 13,
+            zoomControl: true
+        }).on('zoomend', fetchClusteredPhotos);
 
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             attribution: '© OpenStreetMap contributors'
@@ -191,15 +204,58 @@
             .catch(error => console.error('Error:', error));
         });
 
-        document.getElementById('refresh-button').addEventListener('click', fetchAndDisplayMarkers);
+        document.getElementById('refresh-button').addEventListener('click', fetchClusteredPhotos);
 
         // Initial fetch of markers
-        fetchAndDisplayMarkers();
+        fetchClusteredPhotos();
 
         // Add click event to map for simulating location updates
         map.on('click', function(e) {
             updateLocation(e.latlng.lat, e.latlng.lng);
         });
+
+        <!-- Add this function after the fetchAndDisplayMarkers function -->
+        function fetchClusteredPhotos() {
+            const zoom = map.getZoom();
+            fetch(`http://127.0.0.1:5000/get_clustered_photos?zoom=${zoom}&cache_bust=${new Date().getTime()}`)
+                .then(response => response.json())
+                .then(data => {
+                    clearMarkers();
+
+                    data.forEach(cluster => {
+                        if (typeof cluster.latitude === 'number' && typeof cluster.longitude === 'number') {
+                            var marker;
+                            if (cluster.count > 1) {
+                                marker = L.marker([cluster.latitude, cluster.longitude], {
+                                    icon: L.divIcon({
+                                        html: `<div>${cluster.count}</div>`,
+                                        className: 'cluster-marker',
+                                        iconSize: L.point(40, 40, true)
+                                    })
+                                }).addTo(map);
+                                
+                                var popupContent = `<h3>Cluster of ${cluster.count} photos</h3><ul>`;
+                                cluster.photos.forEach(photo => {
+                                    popupContent += `<li>${photo.file_path}</li>`;
+                                });
+                                popupContent += '</ul>';
+                                
+                                marker.bindPopup(popupContent);
+                            } else {
+                                marker = L.marker([cluster.latitude, cluster.longitude], {icon: redPinIcon}).addTo(map);
+                                marker.bindPopup(`<b>${cluster.photos[0].file_path}</b><br>Lat: ${cluster.latitude}, Lon: ${cluster.longitude}`);
+                            }
+                            markers.push(marker);
+                        }
+                    });
+
+                    if (markers.length > 0) {
+                        var group = new L.featureGroup(markers);
+                        map.fitBounds(group.getBounds());
+                    }
+                })
+                .catch(error => console.error('Error fetching clustered photos:', error));
+        }
     </script>
 </body>
 </html>

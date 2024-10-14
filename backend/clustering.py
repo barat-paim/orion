@@ -46,7 +46,7 @@ class PhotoClusterer:
                 'latitude': centroid['latitude'],
                 'longitude': centroid['longitude'],
                 'count': len(cluster_photos),
-                'photos': cluster_photos.to_dict('records')
+                'photos': cluster_photos[['latitude', 'longitude']].to_dict('records')
             })
 
         # Add unclustered photos
@@ -56,7 +56,7 @@ class PhotoClusterer:
                 'latitude': photo['latitude'],
                 'longitude': photo['longitude'],
                 'count': 1,
-                'photos': [photo.to_dict()]
+                'photos': [{'latitude': photo['latitude'], 'longitude': photo['longitude']}]
             })
 
         return result
